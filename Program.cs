@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -71,7 +72,11 @@ if (releaseInfo["ID"] != "fedora" && releaseInfo["ID"] != "almalinux" && release
         }
 }
 else
+{
     os = releaseInfo["ID"];
+    if (os == "rhel")
+        Console.WriteLine("警告：原版RHEL兼容存在一些问题！请自行启用以下存储库：CRB EPEL rpmfusion！");
+}
 
 if (os == "")
 {
@@ -183,7 +188,7 @@ while (true)
     if (int.TryParse(Console.ReadLine(), out var choise) && choise > 0 && choise < 6)
         switch (choise)
         {
-            case 1: Install(); break;
+            case 1: await Install(); break;
             case 2: Upgrade(); break;
             case 3: Remove(); break;
             case 4: GenConfig(); break;
@@ -230,66 +235,271 @@ async Task Install()
     {
         case "fedora":
             Console.WriteLine("Fedora：检查rpmfusion存储库");
-            var checkProc = new Process();
-            checkProc.StartInfo.FileName = packageManager;
-            checkProc.StartInfo.ArgumentList.Add("repolist");
-            checkProc.StartInfo.ArgumentList.Add("--all");
-            checkProc.StartInfo.ArgumentList.Add("-q");
-            checkProc.StartInfo.ArgumentList.Add("--json");
-            checkProc.StartInfo.RedirectStandardOutput = true;
-            checkProc.Start();
-            var checkProcResult = checkProc.StandardOutput.ReadToEnd();
-            var checkProcResultClass = (YumRepoInfo[])JsonSerializer.Deserialize(checkProcResult, typeof(YumRepoInfo[]), SourceGenerationContext.Default);
-            if (!checkProcResultClass.Any(i => i.Id == "rpmfusion-free"))
             {
-                Console.WriteLine("未安装rpmfusion存储库！正在安装......");
-                var installRpmfusionProc = new Process();
-                installRpmfusionProc.StartInfo.FileName = packageManager;
-                installRpmfusionProc.StartInfo.ArgumentList.Add("install");
-                installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-{osVersion}.noarch.rpm");
-                installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{osVersion}.noarch.rpm");
-                installRpmfusionProc.StartInfo.ArgumentList.Add($"-y");
-                installRpmfusionProc.Start();
-                installRpmfusionProc.WaitForExit();
-            }
-            foreach (var i in checkProcResultClass.Where(i => i.Id.StartsWith("rpmfusion") && !i.Id.Contains("debug") && !i.Id.Contains("source") && !i.Id.Contains("test")))
-            {
-                Console.WriteLine($"正在启用{i.Name}存储库......");
-                var enableRpmFusionProc = new Process();
-                enableRpmFusionProc.StartInfo.FileName = packageManager;
-                enableRpmFusionProc.StartInfo.ArgumentList.Add("config-manager");
-                if (int.Parse(osVersion) > 40)
+                var checkProc = new Process();
+                checkProc.StartInfo.FileName = packageManager;
+                checkProc.StartInfo.ArgumentList.Add("repolist");
+                checkProc.StartInfo.ArgumentList.Add("--all");
+                checkProc.StartInfo.ArgumentList.Add("-q");
+                checkProc.StartInfo.ArgumentList.Add("--json");
+                checkProc.StartInfo.RedirectStandardOutput = true;
+                checkProc.Start();
+                var checkProcResult = checkProc.StandardOutput.ReadToEnd();
+                var checkProcResultClass = (YumRepoInfo[])JsonSerializer.Deserialize(checkProcResult, typeof(YumRepoInfo[]), SourceGenerationContext.Default);
+                if (!checkProcResultClass.Any(i => i.Id == "rpmfusion-free"))
                 {
-                    enableRpmFusionProc.StartInfo.ArgumentList.Add("setopt");
-                    enableRpmFusionProc.StartInfo.ArgumentList.Add($"{i.Id}.enabled=1");
+                    Console.WriteLine("未安装rpmfusion存储库！正在安装......");
+                    var installRpmfusionProc = new Process();
+                    installRpmfusionProc.StartInfo.FileName = packageManager;
+                    installRpmfusionProc.StartInfo.ArgumentList.Add("install");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-{osVersion}.noarch.rpm");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{osVersion}.noarch.rpm");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"-y");
+                    installRpmfusionProc.Start();
+                    installRpmfusionProc.WaitForExit();
                 }
-                else
+                foreach (var i in checkProcResultClass.Where(i => i.Id.StartsWith("rpmfusion") && !i.IsEnabled && !i.Id.Contains("debug") && !i.Id.Contains("source") && !i.Id.Contains("test")))
                 {
-                    enableRpmFusionProc.StartInfo.ArgumentList.Add("--enable");
-                    enableRpmFusionProc.StartInfo.ArgumentList.Add(i.Id);
+                    Console.WriteLine($"正在启用{i.Name}存储库......");
+                    var enableRpmFusionProc = new Process();
+                    enableRpmFusionProc.StartInfo.FileName = packageManager;
+                    enableRpmFusionProc.StartInfo.ArgumentList.Add("config-manager");
+                    if (int.Parse(osVersion) > 40)
+                    {
+                        enableRpmFusionProc.StartInfo.ArgumentList.Add("setopt");
+                        enableRpmFusionProc.StartInfo.ArgumentList.Add($"{i.Id}.enabled=1");
+                    }
+                    else
+                    {
+                        enableRpmFusionProc.StartInfo.ArgumentList.Add("--enable");
+                        enableRpmFusionProc.StartInfo.ArgumentList.Add(i.Id);
+                    }
+                    enableRpmFusionProc.Start();
+                    enableRpmFusionProc.WaitForExit();
                 }
-                enableRpmFusionProc.Start();
-                enableRpmFusionProc.WaitForExit();
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("ffmpeg");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-server-Xvfb");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-xauth");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
             }
-            var installProc = new Process();
-            installProc.StartInfo.FileName = packageManager;
-            installProc.StartInfo.ArgumentList.Add("install");
-            installProc.StartInfo.ArgumentList.Add("ffmpeg");
-            installProc.StartInfo.ArgumentList.Add("xorg-x11-server-Xvfb");
-            installProc.StartInfo.ArgumentList.Add("xorg-x11-xauth");
-            installProc.StartInfo.ArgumentList.Add("-y");
-            installProc.Start();
-            installProc.WaitForExit();
             break;
-            // TODO: Alma/RHEL：对RHEL>=10显示不支持警告，安装和启用epel-release和rpmfusion，安装ffmpeg、xorg-x11-server-Xvfb和xorg-x11-xauth
-            // TODO：Debian/Ubuntu：安装ffmpeg、xvfb和xauth
-            // TODO：OpenCloudOS：安装和启用epel-release（<9）/epol-release（>=9）和rpmfusion，安装ffmpeg、xorg-x11-server-Xvfb和xorg-x11-xauth
-            // TODO：SUSE：显示不支持警告，安装ffmpeg、xorg-x11-server-Xvfb和xorg-x11-xauth
+        case "rhel":
+            if (double.Parse(osVersion) >= 10.0)
+                Console.WriteLine("警告：RHEL>=10删除了X11，安装XVFB可能失败！");
+            goto case "almalinux";
+        case "almalinux":
+        case "opencloudos":
+            {
+                Console.WriteLine("RHEL-like/Alma：检查CRB epel-release和rpmfusion存储库");
+                var checkProc = new Process();
+                checkProc.StartInfo.FileName = packageManager;
+                checkProc.StartInfo.ArgumentList.Add("repolist");
+                checkProc.StartInfo.ArgumentList.Add("-q");
+                checkProc.StartInfo.RedirectStandardOutput = true;
+                checkProc.Start();
+                var checkProcResult = checkProc.StandardOutput.ReadToEnd();
+                if (!checkProcResult.Contains("crb") && !checkProcResult.Contains("powertools"))
+                    if (double.Parse(osVersion) >= 9.0)
+                    {
+                        Console.WriteLine("正在启用CRB存储库......");
+                        var enableCrbProc = new Process();
+                        enableCrbProc.StartInfo.FileName = packageManager;
+                        enableCrbProc.StartInfo.ArgumentList.Add("config-manager");
+                        enableCrbProc.StartInfo.ArgumentList.Add("--set-enabled");
+                        enableCrbProc.StartInfo.ArgumentList.Add("crb");
+                        enableCrbProc.StartInfo.ArgumentList.Add("-y");
+                        enableCrbProc.StartInfo.ArgumentList.Add("-q");
+                        enableCrbProc.Start();
+                        enableCrbProc.WaitForExit();
+                    }
+                    else
+                    {
+                        Console.WriteLine("正在启用PowerTools存储库......");
+                        var enableCrbProc = new Process();
+                        enableCrbProc.StartInfo.FileName = packageManager;
+                        enableCrbProc.StartInfo.ArgumentList.Add("config-manager");
+                        enableCrbProc.StartInfo.ArgumentList.Add("--set-enabled");
+                        enableCrbProc.StartInfo.ArgumentList.Add("powertools");
+                        enableCrbProc.StartInfo.ArgumentList.Add("-y");
+                        enableCrbProc.StartInfo.ArgumentList.Add("-q");
+                        enableCrbProc.Start();
+                        enableCrbProc.WaitForExit();
+                    }
+                if (os == "almalinux" && !checkProcResult.Contains("devel"))
+                {
+                    var installDevelRepoProc = new Process();
+                    installDevelRepoProc.StartInfo.FileName = packageManager;
+                    installDevelRepoProc.StartInfo.ArgumentList.Add("install");
+                    installDevelRepoProc.StartInfo.ArgumentList.Add("almalinux-release-devel");
+                    installDevelRepoProc.StartInfo.ArgumentList.Add("-y");
+                    installDevelRepoProc.Start();
+                    installDevelRepoProc.WaitForExit();
+                }
+                if (!checkProcResult.Contains("epel") && !checkProcResult.Contains("epol"))
+                {
+                    if (os == "opencloudos" && double.Parse(osVersion) < 9.0)
+                    {
+                        Console.WriteLine("正在启用EPEL存储库......");
+                        var addEpelProc = new Process();
+                        addEpelProc.StartInfo.FileName = packageManager;
+                        addEpelProc.StartInfo.ArgumentList.Add("install");
+                        addEpelProc.StartInfo.ArgumentList.Add("epel");
+                        addEpelProc.StartInfo.ArgumentList.Add("-y");
+                        addEpelProc.StartInfo.ArgumentList.Add("-q");
+                        addEpelProc.Start();
+                        addEpelProc.WaitForExit();
+                    }
+                    else
+                    {
+                        Console.WriteLine("正在启用EPOL存储库......");
+                        var addEpelProc = new Process();
+                        addEpelProc.StartInfo.FileName = packageManager;
+                        addEpelProc.StartInfo.ArgumentList.Add("install");
+                        addEpelProc.StartInfo.ArgumentList.Add("epol");
+                        addEpelProc.StartInfo.ArgumentList.Add("-y");
+                        addEpelProc.StartInfo.ArgumentList.Add("-q");
+                        addEpelProc.Start();
+                        addEpelProc.WaitForExit();
+                    }
+                }
+                if (!checkProcResult.Contains("rpmfusion-free"))
+                {
+                    Console.WriteLine("正在启用rpmfusion存储库......");
+                    var installRpmfusionProc = new Process();
+                    installRpmfusionProc.StartInfo.FileName = packageManager;
+                    installRpmfusionProc.StartInfo.ArgumentList.Add("install");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/free/el/rpmfusion-free-release-{(int)double.Parse(osVersion)}.noarch.rpm");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"https://mirrors.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-{(int)double.Parse(osVersion)}.noarch.rpm");
+                    installRpmfusionProc.StartInfo.ArgumentList.Add($"-y");
+                    installRpmfusionProc.Start();
+                    installRpmfusionProc.WaitForExit();
+                }
+                foreach (var i in (string[])["rpmfusion-free-updates", "rpmfusion-nonfree-updates"])
+                {
+                    Console.WriteLine($"正在启用{i}存储库......");
+                    var enableRpmFusionProc = new Process();
+                    enableRpmFusionProc.StartInfo.FileName = packageManager;
+                    enableRpmFusionProc.StartInfo.ArgumentList.Add("config-manager");
+                    enableRpmFusionProc.StartInfo.ArgumentList.Add("--enable");
+                    enableRpmFusionProc.StartInfo.ArgumentList.Add(i);
+                    enableRpmFusionProc.Start();
+                    enableRpmFusionProc.WaitForExit();
+                }
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("ffmpeg");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-server-Xvfb");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-xauth");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
+            }
+            break;
+        case "debian":
+        case "ubuntu":
+            {
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("ffmpeg");
+                installProc.StartInfo.ArgumentList.Add("xvfb");
+                installProc.StartInfo.ArgumentList.Add("xauth");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
+            }
+            break;
+        case "sles":
+            {
+                Console.WriteLine("警告：OpenSUSE/SLES支持没有经过测试，可能出现问题。");
+                Console.WriteLine("警告：OpenSUSE/SLES请手动启用存储库。");
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("ffmpeg");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-server-Xvfb");
+                installProc.StartInfo.ArgumentList.Add("xorg-x11-xauth");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
+            }
+            break;
     }
     Console.WriteLine("3. 安装QQ");
-    // TODO：从DownloadQQData提取URL，使用C#的HttpClient进行下载，并使用包管理器安装QQ
+    switch (packageType)
+    {
+        case PackageType.RPM:
+            switch (archType)
+            {
+                case ArchType.AMD64:
+                    {
+                        var res = await httpClient.GetAsync(versionConf.QQ.RPM.AMD64);
+                        using var fs = File.OpenWrite("qq.rpm");
+                        await res.Content.CopyToAsync(fs);
+                        await fs.FlushAsync();
+                    }
+                    break;
+                case ArchType.ARM64:
+                    {
+                        var res = await httpClient.GetAsync(versionConf.QQ.RPM.ARM64);
+                        using var fs = File.OpenWrite("qq.rpm");
+                        await res.Content.CopyToAsync(fs);
+                        await fs.FlushAsync();
+                    }
+                    break;
+            }
+            {
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("./qq.rpm");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
+            }
+            break;
+        case PackageType.DEB:
+            switch (archType)
+            {
+                case ArchType.AMD64:
+                    {
+                        var res = await httpClient.GetAsync(versionConf.QQ.DEB.AMD64);
+                        using var fs = File.OpenWrite("qq.deb");
+                        await res.Content.CopyToAsync(fs);
+                        await fs.FlushAsync();
+                    }
+                    break;
+                case ArchType.ARM64:
+                    {
+                        var res = await httpClient.GetAsync(versionConf.QQ.DEB.ARM64);
+                        using var fs = File.OpenWrite("qq.deb");
+                        await res.Content.CopyToAsync(fs);
+                        await fs.FlushAsync();
+                    }
+                    break;
+            }
+            {
+                var installProc = new Process();
+                installProc.StartInfo.FileName = packageManager;
+                installProc.StartInfo.ArgumentList.Add("install");
+                installProc.StartInfo.ArgumentList.Add("./qq.deb");
+                installProc.StartInfo.ArgumentList.Add("-y");
+                installProc.Start();
+                installProc.WaitForExit();
+            }
+            break;
+    }
     Console.WriteLine("4. 安装Napcat");
-    // TODO：从DownloadData的NapcatAddress中下载Napcat，并解压到指定目录
+    {
+        var res = await httpClient.GetAsync(conf.GithubProxyAddress + versionConf.NapcatAddress);
+        ZipFile.ExtractToDirectory(await res.Content.ReadAsStreamAsync(), conf.InstallAddress);
+    }
     Console.WriteLine("5. 修补配置文件");
     await File.WriteAllTextAsync("/opt/QQ/resources/app/loadNapCat.cjs", $@"const fs = require(""fs"");
 const path = require(""path"");
@@ -309,7 +519,15 @@ if (hasNapcatParam) {{
     ChangeMain(node);
     await File.WriteAllTextAsync("/opt/QQ/resources/app/package.json", node.ToJsonString());
     Console.WriteLine("6. 设置权限");
-    // TODO：chmod -R
+    {
+        var setPremProc = new Process();
+        setPremProc.StartInfo.FileName = "chown";
+        setPremProc.StartInfo.ArgumentList.Add("-R");
+        setPremProc.StartInfo.ArgumentList.Add(conf.InstallOwner);
+        setPremProc.StartInfo.ArgumentList.Add(conf.InstallAddress);
+        setPremProc.Start();
+        setPremProc.WaitForExit();
+    }
     if (conf.Experimental_InstallSystemdService)
     {
         Console.WriteLine("7. 安装systemd服务");
@@ -355,11 +573,8 @@ void ChangeMain(JsonNode node)
             return;
         case JsonValueKind.Object:
             foreach (var i in (JsonObject)node)
-                ChangeMain(i.Value);
-            return;
-        case JsonValueKind.String:
-            if (node.GetPropertyName().Contains("main"))
-                node = "./loadNapCat.cjs";
+                if (i.Key.Contains("main"))
+                    node[i.Key] = "./loadNapCat.cjs";
             return;
     }
 }
@@ -369,7 +584,7 @@ enum ArchType { AMD64, ARM64 };
 class Config
 {
     public bool Experimental_InstallSystemdService { get; set; } = false;
-    public string InstallAddress { get; set; } = "";
+    public string InstallAddress { get; set; } = Environment.CurrentDirectory + Path.DirectorySeparatorChar + "napcat";
     public string InstallOwner { get; set; } = "";
     public string GithubProxyAddress { get; set; } = "";
     public long QQID { get; set; } = 0;
@@ -387,7 +602,7 @@ class DownloadQQData
 class DownloadData
 {
     public Uri NapcatAddress { get; set; }
-    public DownloadQQData QQData { get; set; }
+    public DownloadQQData QQ { get; set; }
 }
 class YumRepoInfo
 {

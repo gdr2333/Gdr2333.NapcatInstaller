@@ -189,7 +189,7 @@ while (true)
         switch (choise)
         {
             case 1: await Install(); break;
-            case 2: Upgrade(); break;
+            case 2: await Upgrade(); break;
             case 3: Remove(); break;
             case 4: GenConfig(); break;
             case 5: return;
@@ -200,8 +200,10 @@ void GenConfig()
 {
     Console.WriteLine("正在新建配置文件");
     conf = new();
-    Console.WriteLine("请输入要安装的目标地址：（默认为当前目录）");
-    conf.InstallAddress = Console.ReadLine();
+    Console.WriteLine("请输入要安装的目标地址：（默认为当前目录下的napcat文件夹）");
+    var tmp = Console.ReadLine();
+    if (!string.IsNullOrEmpty(tmp))
+        conf.InstallAddress = tmp;
     Console.WriteLine("请输入安装后的目录权限：（默认为root:root）");
     var perm = Console.ReadLine();
     if (string.IsNullOrEmpty(perm))
@@ -547,14 +549,43 @@ WantedBy=multi-user.target");
     Console.WriteLine("安装完成！");
 }
 
-void Upgrade()
+async Task Upgrade()
 {
-    // TODO
+    Console.WriteLine("备份配置文件......");
+    if (Directory.Exists("/tmp/ncconf"))
+        Directory.Delete("/tmp/ncconf", true);
+    Directory.Move($"{conf.InstallAddress}{Path.DirectorySeparatorChar}config", "/tmp/ncconf");
+    Console.WriteLine("删除Napcat......");
+    Remove();
+    Console.WriteLine("安装Napcat......");
+    await Install();
+    Directory.Delete($"{conf.InstallAddress}{Path.DirectorySeparatorChar}config", true);
+    Directory.Move("/tmp/ncconf", $"{conf.InstallAddress}{Path.DirectorySeparatorChar}config");
+    {
+        var setPremProc = new Process();
+        setPremProc.StartInfo.FileName = "chown";
+        setPremProc.StartInfo.ArgumentList.Add("-R");
+        setPremProc.StartInfo.ArgumentList.Add(conf.InstallOwner);
+        setPremProc.StartInfo.ArgumentList.Add(conf.InstallAddress);
+        setPremProc.Start();
+        setPremProc.WaitForExit();
+    }
+    Console.WriteLine("完成！");
 }
 
 void Remove()
 {
-    // TODO
+    Console.WriteLine("1. 删除Napcat");
+    Directory.Delete(conf.InstallAddress, true);
+    Console.WriteLine("2. 删除QQ");
+    var uninstallProc = new Process();
+    uninstallProc.StartInfo.FileName = packageManager;
+    uninstallProc.StartInfo.ArgumentList.Add("remove");
+    uninstallProc.StartInfo.ArgumentList.Add("linuxqq");
+    uninstallProc.StartInfo.ArgumentList.Add("-y");
+    uninstallProc.Start();
+    uninstallProc.WaitForExit();
+    Console.WriteLine("删除完成！如果需要删除ffmpeg等依赖项，请手动删除");
 }
 
 void ChangeMain(JsonNode node)

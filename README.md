@@ -1,6 +1,6 @@
 ### Gdr2333.NapcatInstaller
 
-注意：这不是官方安装器。官方安装器在https://github.com/NapNeko/NapCat-Installer。
+注意：这不是官方安装器。官方安装器在https://github.com/NapNeko/NapCat-Installer 。
 
 本安装器特色：
 

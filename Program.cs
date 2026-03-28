@@ -344,7 +344,7 @@ async Task Install()
                 }
                 if (!checkProcResult.Contains("epel") && !checkProcResult.Contains("epol"))
                 {
-                    if (os == "opencloudos" && double.Parse(osVersion) < 9.0)
+                    if (os != "opencloudos" || double.Parse(osVersion) < 9.0)
                     {
                         Console.WriteLine("正在启用EPEL存储库......");
                         var addEpelProc = new Process();
